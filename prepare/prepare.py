@@ -3,12 +3,55 @@ import argparse
 import pickle
 
 import numpy as np
+from numpy.core.umath_tests import inner1d
 import scipy
 import scipy.sparse as sp
 
+import MDAnalysis.analysis.distances
 import MDAnalysis as md
 from tqdm import tqdm
-from util import(square_distance_matrix, angle, pbc, cartesian_to_spherical)
+
+def pbc(ref_pos_mat, pos_mat, box):
+    box = box[:3]
+
+    pbc_pos_mat = np.copy(pos_mat)
+
+    for i in range(3):
+        mask1 = pos_mat[:,i] - ref_pos_mat[:,i] > 0.5*box[i]
+        mask2 = ref_pos_mat[:,i] - pos_mat[:,i] > 0.5*box[i]
+
+        pbc_pos_mat[mask1,i] -= box[i]
+        pbc_pos_mat[mask2,i] += box[i]
+        
+    return pbc_pos_mat
+            
+
+
+def angle(ref_pos_mat, pos1_mat, pos2_mat):
+    angle_vec = np.zeros(len(ref_pos_mat))
+
+    v1_mat = pos1_mat - ref_pos_mat
+    v2_mat = pos2_mat - ref_pos_mat
+
+    norm1_vec = np.linalg.norm(v1_mat, axis=1)
+    norm2_vec = np.linalg.norm(v2_mat, axis=1)
+
+    v1_mat /= np.tile(norm1_vec, (3,1)).T
+    v2_mat /= np.tile(norm2_vec, (3,1)).T
+
+    return inner1d(v1_mat, v2_mat)
+
+
+
+def cartesian_to_spherical(x, y, z):
+    xsq_plus_ysq = x**2 + y**2
+
+    r = np.sqrt(xsq_plus_ysq + z**2)
+    theta = np.arctan2(z, np.sqrt(xsq_plus_ysq))
+    pi = np.arctan2(y,x)
+
+    return np.array([r, theta, pi])
+
 
 def get_ylm_matrix(spherical_coordinate_matrix, l):
     num_vectors = len(spherical_coordinate_matrix)
@@ -99,34 +142,28 @@ def qlm_average_to_ql(qlm_average_matrix, l=4):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--s', type=str, help='topology file')
-parser.add_argument('--f', type=str, help='trajectory file')
-parser.add_argument('--o', type=str, help='output file')
-parser.add_argument('--adj', type=str, help='coordination adjacency file of sparse matrix')
-parser.add_argument('--a_hat', type=str, help='a hat file of sparse matrix')
-parser.add_argument('--n_neighbor', type=int, default=8, help='number of neighbours')
-
+parser.add_argument('--s', type=str, 
+                    help='topology file. .tpr extension.')
+parser.add_argument('--f', type=str, 
+                    help='trajectory file. .xtc, .trr, .gro extensions')
+parser.add_argument('--o', type=str, 
+                    help='output file. .npz extension.')
+parser.add_argument('--a_hat', type=str, 
+                    help='a hat file of sparse matrix converted by scipy.sparse module. .pickle extension.')
+parser.add_argument('--n_neighbor', type=int, default=8, 
+                    help='number of neighbours for calculation of Steinhardt parameter.')
 args = parser.parse_args()
 
-tpr_filename = args.s
-xtc_filename = args.f
-ofilename = args.o
 
-u = md.Universe(tpr_filename, xtc_filename)
-
-n_frame = len(u.trajectory)
-
+u = md.Universe(args.s, args.f)
 ow = u.select_atoms("name OW")
 
+n_frame = len(u.trajectory)
 n_ow = len(ow)
+n_feature = 12
 
-r_max = 10.
-
-d5_mat = np.zeros((n_frame, n_ow))
-tet_mat = np.zeros((n_frame, n_ow))
-lsi_mat = np.zeros((n_frame, n_ow))
-q4_mat = np.zeros((n_frame, n_ow))
-q6_mat = np.zeros((n_frame, n_ow))
+feature_mat3 = np.zeros((n_frame, n_ow, n_feature))
+dist_ow_mat = np.zeros((n_ow, n_ow))
 
 o_adj = []
 o_a_hat = []
@@ -139,49 +176,52 @@ for i in tqdm(range(n_frame)):
     
     pos_ow_mat = ow.positions        
     
-    sqr_dist_ow_mat = np.zeros((n_ow, n_ow), dtype=np.float32)
-    square_distance_matrix(pos_ow_mat, box, sqr_dist_ow_mat, r_max**2, n_ow)
+    dist_ow_mat = MDAnalysis.analysis.distances.distance_array(pos_ow_mat, pos_ow_mat, box=box)
+
+    sorted_dist_ow_mat = np.sort(dist_ow_mat, kind='mergesort', 
+                                 axis=1)
+    idx_sorted_dist_ow_mat = np.argsort(dist_ow_mat, kind='mergesort', 
+                                        axis=1)
+
+    # d
+    for j in range(1,5+1):
+        feature_mat3[i,:,j-1] += sorted_dist_ow_mat[:,j]
+
+
+    # q_tet
+    q_tet_vec = np.zeros(n_ow)
+    q_tet_vec.fill(1)
+    for j in range(1,4):
+        pos_ow_i_mat = pos_ow_mat[idx_sorted_dist_ow_mat[:,j]]
+        pbc_pos_ow_i_mat = pbc(pos_ow_mat, pos_ow_i_mat, box)
+
+        for k in range(j+1, 5):
+            pos_ow_j_mat = pos_ow_mat[idx_sorted_dist_ow_mat[:,k]]
+            pbc_pos_ow_j_mat = pbc(pos_ow_mat, pos_ow_j_mat, box)
+
+            cos_angle_vec = angle(pos_ow_mat,
+                                  pbc_pos_ow_i_mat,
+                                  pbc_pos_ow_j_mat)
+
+            q_tet_vec += -0.375*(cos_angle_vec+1./3.)**2
+
+    feature_mat3[i,:,6] += q_tet_vec
+
+    
          
+    # LSI
+    lsi_vec = np.zeros(n_ow)
     for j in range(n_ow):            
-        sqr_dist_ow_vec = sqr_dist_ow_mat[j]
-
-        idx_sorted_sqr_dist_ow_vec = np.argsort(sqr_dist_ow_vec, kind='mergesort')
-        sorted_sqr_dist_ow_vec = np.sort(sqr_dist_ow_vec, kind='mergesort')
-
+        dist_ow_vec = dist_ow_mat[j]
+        sorted_dist_ow_vec = sorted_dist_ow_mat[j]
         pos_ow_vec = pos_ow_mat[j]
-        
-        # d5
-        d5_mat[i, j] = np.sqrt(sorted_sqr_dist_ow_vec[5])
-
-        # q_tet
-        q_tet = 0.
-        for k in range(1,4):
-            idx_i = idx_sorted_sqr_dist_ow_vec[k]
-            pos_i_vec = pos_ow_mat[idx_i]
-            pbc_pos_i_vec = np.zeros(3, dtype=np.float32)
-            pbc_pos_i_vec = pbc(pos_i_vec, pos_ow_vec, box)
-
-            for l in range(k+1,5):
-                idx_j = idx_sorted_sqr_dist_ow_vec[l]
-                pos_j_vec = pos_ow_mat[idx_j]
-                pbc_pos_j_vec = np.zeros(3, dtype=np.float32)
-                pbc_pos_j_vec = pbc(pos_j_vec, pos_ow_vec, box)
-
-                cos_angle = angle(pos_ow_vec, pbc_pos_i_vec, pbc_pos_j_vec)
-
-                q_tet += (cos_angle+1./3.)**2
-
-        q_tet = -0.375*q_tet
-        q_tet = 1 + q_tet
-
-        tet_mat[i, j] = q_tet
 
         # LSI
         lsi = 0.
         lsi_dist_vec = []
         for k in range(1, n_ow):
-            lsi_dist_vec.append(np.sqrt(sorted_sqr_dist_ow_vec[k]))
-            if sorted_sqr_dist_ow_vec[k] > 3.7*3.7:
+            lsi_dist_vec.append(sorted_dist_ow_vec[k])
+            if sorted_dist_ow_vec[k] > 3.7:
                 break
 
         diff_lsi_dist_vec = []
@@ -198,19 +238,21 @@ for i in tqdm(range(n_frame)):
         else:
             lsi /= len(diff_lsi_dist_vec)
 
-        lsi_mat[i, j] = lsi
+        lsi_vec[j] = lsi
+    feature_mat3[i,:,7] += lsi_vec
 
 
+    '''
     # q4 & q6
     q4lm_mat = []
     q6lm_mat = []
 
     for j in range(n_ow):
 
-        sqr_dist_ow_vec = sqr_dist_ow_mat[j]
+        dist_ow_vec = dist_ow_mat[j]
 
-        sorted_sqr_dist_ow_vec = np.sort(sqr_dist_ow_vec, kind='mergesort')
-        idx_sorted_sqr_dist_ow_vec = np.argsort(sqr_dist_ow_vec, kind='mergesort')
+        sorted_dist_ow_vec = np.sort(dist_ow_vec, kind='mergesort')
+        idx_sorted_dist_ow_vec = np.argsort(dist_ow_vec, kind='mergesort')
 
         angle_matrix = []
 
@@ -221,7 +263,7 @@ for i in tqdm(range(n_frame)):
 
         for k in range(1, args.n_neighbor+1):
 
-            idx_k = idx_sorted_sqr_dist_ow_vec[k]
+            idx_k = idx_sorted_dist_ow_vec[k]
 
             pos_ow_i_vec = pos_ow_mat[idx_k]
             pos_ow_i_vec = pbc(pos_ow_i_vec, pos_ow_vec, box)
@@ -242,26 +284,28 @@ for i in tqdm(range(n_frame)):
         q4lm_mat.append(q4lm_vec)
         q6lm_mat.append(q6lm_vec)
 
-    q4lm_avg_mat = qlm_to_qlm_average(q4lm_mat, sqr_dist_ow_mat, args.n_neighbor, l=4)
-    q6lm_avg_mat = qlm_to_qlm_average(q6lm_mat, sqr_dist_ow_mat, args.n_neighbor, l=6)
+    q4lm_avg_mat = qlm_to_qlm_average(q4lm_mat, dist_ow_mat, args.n_neighbor, l=4)
+    q6lm_avg_mat = qlm_to_qlm_average(q6lm_mat, dist_ow_mat, args.n_neighbor, l=6)
 
     q4_mat[i] = qlm_average_to_ql(q4lm_avg_mat, l=4)
     q6_mat[i] = qlm_average_to_ql(q6lm_avg_mat, l=6)
 
+    '''
 
     # make adjacency matrix of whole system
     adj = np.zeros((n_ow, n_ow), int)
     a_hat = np.zeros((n_ow, n_ow))
+    '''
 
     for j in range(n_ow):
-        sqr_dist_ow_vec = sqr_dist_ow_mat[j]
+        dist_ow_vec = dist_ow_mat[j]
 
-        idx_sorted_sqr_dist_ow_vec = np.argsort(sqr_dist_ow_vec, kind='mergesort')
-        sorted_sqr_dist_ow_vec = np.sort(sqr_dist_ow_vec, kind='mergesort')
+        idx_sorted_dist_ow_vec = np.argsort(dist_ow_vec, kind='mergesort')
+        sorted_dist_ow_vec = np.sort(dist_ow_vec, kind='mergesort')
 
         for k in range(1, n_ow):
-            adj[j, idx_sorted_sqr_dist_ow_vec[k]] = 1
-            if sorted_sqr_dist_ow_vec[k] > 3.5**2:
+            adj[j, idx_sorted_dist_ow_vec[k]] = 1
+            if sorted_dist_ow_vec[k] > 3.5**2:
                 break
 
     buf = adj + np.eye(n_ow)
@@ -274,27 +318,29 @@ for i in tqdm(range(n_frame)):
                 pass
             else:
                 a_hat[j, k] = buf[j, k] / np.sqrt((np.sum(buf[j])+1) * (np.sum(buf[k])+1))
-
-
+    '''
 
     adj = sp.coo_matrix(adj)
     a_hat = sp.coo_matrix(a_hat)
 
 
+
     o_adj.append(adj)
     o_a_hat.append(a_hat)
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.distplot(np.reshape(feature_mat3[:,:,7],-1))
+plt.show()
 
-np.savez(ofilename,
+
+np.savez(args.o,
         d5 = d5_mat,
         tet = tet_mat,
         lsi = lsi_mat,
         q4 = q4_mat,
         q6 = q6_mat,
         )
-
-with open(args.adj, 'wb') as f:
-    pickle.dump(o_adj, f)
 
 with open(args.a_hat, 'wb') as f:
     pickle.dump(o_a_hat, f)
