@@ -43,14 +43,16 @@ def angle(ref_pos_mat, pos1_mat, pos2_mat):
 
 
 
-def cartesian_to_spherical(x, y, z):
-    xsq_plus_ysq = x**2 + y**2
+def cartesian_to_spherical(cart_mat):
+    sph_mat = np.zeros_like(cart_mat)
+    x_vec, y_vec, z_vec = cart_mat.T
 
-    r = np.sqrt(xsq_plus_ysq + z**2)
-    theta = np.arctan2(z, np.sqrt(xsq_plus_ysq))
-    pi = np.arctan2(y,x)
+    xsq_plus_ysq_vec = x_vec**2 + y_vec**2
+    sph_mat[:,0] = np.sqrt(xsq_plus_ysq_vec + z_vec**2)
+    sph_mat[:,1] = np.arctan2(z_vec, np.sqrt(xsq_plus_ysq_vec))
+    sph_mat[:,2] = np.arctan2(y_vec, x_vec)
 
-    return np.array([r, theta, pi])
+    return sph_mat
 
 
 def get_ylm_matrix(spherical_coordinate_matrix, l):
@@ -89,16 +91,16 @@ def ylm_to_qlm(ylm_matrix, l):
 
     return qlm_vector
 
-def qlm_to_qlm_average(qlm_matrix, square_distance_ow_matrix, n_neighbor, l):
+def qlm_to_qlm_average(qlm_matrix, distance_ow_matrix, n_neighbor, l):
     qlm_average_matrix = []
 
-    num_ow = len(square_distance_ow_matrix)
+    num_ow = len(distance_ow_matrix)
     
     for i in range(num_ow):
 
-        square_distance_ow_vector = square_distance_ow_matrix[i]
+        distance_ow_vector = distance_ow_matrix[i]
         
-        index_sorted_square_distance_ow_vector = np.argsort(square_distance_ow_vector,
+        index_sorted_distance_ow_vector = np.argsort(distance_ow_vector,
                                                             kind='mergesort')
         
         qlm_average_vector = np.zeros(2*l+1)        
@@ -107,7 +109,7 @@ def qlm_to_qlm_average(qlm_matrix, square_distance_ow_matrix, n_neighbor, l):
         
         for j in range(1, n_neighbor+1):
             
-            index_j = index_sorted_square_distance_ow_vector[j]
+            index_j = index_sorted_distance_ow_vector[j]
             
             qlm_average_vector += qlm_matrix[index_j]
             
@@ -150,7 +152,7 @@ parser.add_argument('--o', type=str,
                     help='output file. .npz extension.')
 parser.add_argument('--a_hat', type=str, 
                     help='a hat file of sparse matrix converted by scipy.sparse module. .pickle extension.')
-parser.add_argument('--n_neighbor', type=int, default=8, 
+parser.add_argument('--n_neighbor', type=int, default=12, 
                     help='number of neighbours for calculation of Steinhardt parameter.')
 args = parser.parse_args()
 
@@ -242,42 +244,22 @@ for i in tqdm(range(n_frame)):
     feature_mat3[i,:,7] += lsi_vec
 
 
-    '''
     # q4 & q6
     q4lm_mat = []
     q6lm_mat = []
 
+    sph_coord_mat3 = np.zeros((n_ow, args.n_neighbor, 3))
+
+    for j in range(1, args.n_neighbor+1):
+        pos_ow_i_mat = pos_ow_mat[idx_sorted_dist_ow_mat[:,j]]
+        pbc_pos_ow_i_mat = pbc(pos_ow_mat, pos_ow_i_mat, box)
+
+        sph_coord_mat3[:,j-1,:] = cartesian_to_spherical(pbc_pos_ow_i_mat - pos_ow_mat)
+
+
     for j in range(n_ow):
-
-        dist_ow_vec = dist_ow_mat[j]
-
-        sorted_dist_ow_vec = np.sort(dist_ow_vec, kind='mergesort')
-        idx_sorted_dist_ow_vec = np.argsort(dist_ow_vec, kind='mergesort')
-
-        angle_matrix = []
-
-        pos_ow_vec = pos_ow_mat[j]
-        
-        sph_coord_mat = []
-
-
-        for k in range(1, args.n_neighbor+1):
-
-            idx_k = idx_sorted_dist_ow_vec[k]
-
-            pos_ow_i_vec = pos_ow_mat[idx_k]
-            pos_ow_i_vec = pbc(pos_ow_i_vec, pos_ow_vec, box)
-
-            x, y, z = pos_ow_i_vec - pos_ow_vec
-
-            r, theta, pi = cartesian_to_spherical(x, y, z)
-
-            sph_coord_mat.append([r, theta, pi])
-
-        sph_coord_mat = np.array(sph_coord_mat)
-
-        y4lm_mat = get_ylm_matrix(sph_coord_mat, l=4)
-        y6lm_mat = get_ylm_matrix(sph_coord_mat, l=6)
+        y4lm_mat = get_ylm_matrix(sph_coord_mat3[j], l=4)
+        y6lm_mat = get_ylm_matrix(sph_coord_mat3[j], l=6)
         q4lm_vec = ylm_to_qlm(y4lm_mat, l=4)
         q6lm_vec = ylm_to_qlm(y6lm_mat, l=6)
 
@@ -287,10 +269,9 @@ for i in tqdm(range(n_frame)):
     q4lm_avg_mat = qlm_to_qlm_average(q4lm_mat, dist_ow_mat, args.n_neighbor, l=4)
     q6lm_avg_mat = qlm_to_qlm_average(q6lm_mat, dist_ow_mat, args.n_neighbor, l=6)
 
-    q4_mat[i] = qlm_average_to_ql(q4lm_avg_mat, l=4)
-    q6_mat[i] = qlm_average_to_ql(q6lm_avg_mat, l=6)
+    feature_mat3[i,:,8] += qlm_average_to_ql(q4lm_avg_mat, l=4)
+    feature_mat3[i,:,9] += qlm_average_to_ql(q6lm_avg_mat, l=6)
 
-    '''
 
     # make adjacency matrix of whole system
     adj = np.zeros((n_ow, n_ow), int)
@@ -330,17 +311,12 @@ for i in tqdm(range(n_frame)):
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.distplot(np.reshape(feature_mat3[:,:,7],-1))
+sns.distplot(np.reshape(feature_mat3[:,:,8],-1))
+sns.distplot(np.reshape(feature_mat3[:,:,9],-1))
 plt.show()
 
 
-np.savez(args.o,
-        d5 = d5_mat,
-        tet = tet_mat,
-        lsi = lsi_mat,
-        q4 = q4_mat,
-        q6 = q6_mat,
-        )
-
+'''
 with open(args.a_hat, 'wb') as f:
     pickle.dump(o_a_hat, f)
+'''
