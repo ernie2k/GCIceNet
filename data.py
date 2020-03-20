@@ -41,7 +41,7 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
 
         data_file = np.load(data_fname)
 
-        feat_list = data_file['feat']
+        feat_list = data_file['feature']
         n_fea = np.shape(feat_list)[2]
 
         with open(adj_fname, 'rb') as f:
@@ -59,8 +59,6 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
             # normalize
             for k in range(5):
                 feature[:, k] /= 5.
-            feature[:, 12] /= 65.
-            feature[:, 13] /= 3.5
 
             label = np.full(n_node, i)
 

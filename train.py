@@ -10,7 +10,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from models import NN, GCN
-from data import load_data, accuracy
+from data import load_data, accuracy, prepare_svm_data
+
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
 
 
 # Training settings
@@ -19,16 +23,16 @@ parser = argparse.ArgumentParser()
 #                    help='Validate during training pass.')
 parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
+parser.add_argument('--n_conf', type=int, default=10,
+                    help='Number of configurations of molecular snapshots')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='Initial learning rate.')
 parser.add_argument('--hidden', type=int, default=32,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
-parser.add_argument('--n_conf', type=int, default=10,
-                    help='Number of snapshots used.')
 parser.add_argument('--model', type=str, default='GCN',
-                    help='Network Model: NN, GCN')
+                    help='Network Model: SVM, NN, GCN')
 parser.add_argument('--log', type=str, default=None,
                     help='Log file containing training process')
 parser.add_argument('--o', type=str, default=None,
@@ -57,6 +61,10 @@ elif args.model == 'GCN':
                 n_hid=args.hidden,
                 n_class=n_class,
                 dropout=args.dropout)
+elif args.model == 'SVM':
+    # dummy process
+    model = NN(n_feat, args.hidden, n_class, args.dropout)
+    clf = SVC(gamma='auto', verbose=True)
 else:
     raise ValueError("You choose wrong network model")
 
@@ -72,6 +80,15 @@ n_val = len(adj_val)
 n_test = len(adj_test)
 
 def train(epoch):
+    if args.model == 'SVM':
+        x, y = prepare_svm_data(features_test, labels_test)
+        clf.fit(x, y)
+        pred = clf.predict(x)
+        print(accuracy_score(pred, y))
+
+        exit(1)
+
+
     t = time.time()
 
     running_loss_train = 0
@@ -110,6 +127,27 @@ def train(epoch):
 
 
 
+def test():
+
+    running_loss_test = 0
+    running_tot_acc_test = 0
+    
+    for i in range(n_test):
+        model.eval()
+        output_test = model(features_test[i], adj_test[i])
+        loss_test = F.nll_loss(output_test, labels_test[i])
+        tot_acc_test = accuracy(output_test, labels_test[i])
+        running_loss_test += loss_test
+        running_tot_acc_test += tot_acc_test
+
+        idx = labels_test[i].detach().numpy()[0]
+
+    print("Test set results:",
+          "loss= {:.4f}".format(running_loss_test/n_test),
+          "Total accuracy={:.4f}".format(running_tot_acc_test/n_test))
+    
+
+
 
 # Train model
 log = []
@@ -120,6 +158,10 @@ for epoch in range(args.epochs):
 
 print("Optimization Finished!")
 print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
+
+# Test model
+test()
+
 
 
 # Save File
