@@ -44,6 +44,7 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
         feat_list = data_file['feature']
         n_fea = np.shape(feat_list)[2]
 
+
         with open(adj_fname, 'rb') as f:
             adj_sp_list = pickle.load(f)
 
@@ -55,10 +56,6 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
         for j, (feat, adj_sp) in enumerate(zip(feat_list, adj_sp_list)):
 
             feature = feat
-
-            # normalize
-            for k in range(5):
-                feature[:, k] /= 5.
 
             label = np.full(n_node, i)
 
@@ -81,6 +78,27 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
                 adj_test_list.append(adj)
                 feature_test_list.append(feature)
                 label_test_list.append(label)
+
+    # MinMaxScaling
+    for i in range(n_fea):
+        feature_vec = []
+
+        for j, feature in enumerate(feature_train_list):
+            for fea in feature[:,i]:
+                feature_vec.append(fea)
+
+        min_f = np.min(feature_vec)
+        max_f = np.max(feature_vec)
+        df = max_f - min_f
+
+        for j, feature_train in enumerate(feature_train_list):
+            feature_train[:,i] = (feature_train[:,i]-min_f)/df
+        for j, feature_val in enumerate(feature_val_list):
+            feature_val[:,i] = (feature_val[:,i]-min_f)/df
+        for j, feature_test in enumerate(feature_test_list):
+            feature_test[:,i] = (feature_test[:,i]-min_f)/df
+
+
 
     return adj_train_list, adj_val_list, adj_test_list, feature_train_list, feature_val_list, feature_test_list, label_train_list, label_val_list, label_test_list, n_fea, n_class
 

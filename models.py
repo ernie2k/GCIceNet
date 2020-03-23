@@ -29,7 +29,7 @@ class NN(nn.Module):
         self.dropout = dropout
 
     def forward(self, x, adj):
-        x = F.relu(self.nn1(x))
+        x = F.leaky_relu(self.nn1(x))
         x = F.dropout(x, self.dropout, training=self.training)
         x = self.nn2(x)
         return F.log_softmax(x, dim=1)
