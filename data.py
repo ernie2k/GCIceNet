@@ -3,8 +3,11 @@ import scipy.sparse as sp
 import torch
 import pickle
 
+name_list = ['w', '1h', '1c', '2', '3', '6', '7', 'T', 'sI']
 
-def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T', 'sI'], n_conf=10):
+
+def load_data(path="data/", name_list=name_list, n_conf=10):
+
     print('Loading ice dataset...')
 
     adj_train_list = []
@@ -23,7 +26,7 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
     val_size = int(n_conf*.1)
     test_size = n_conf - train_size - val_size
 
-    if train_size<1 or val_size<1 or test_size<1:
+    if train_size < 1 or val_size < 1 or test_size < 1:
         print("Dataset is too small to split train-validation-test set!")
         exit(1)
 
@@ -43,7 +46,6 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
 
         feat_list = data_file['feature']
         n_fea = np.shape(feat_list)[2]
-
 
         with open(adj_fname, 'rb') as f:
             adj_sp_list = pickle.load(f)
@@ -84,7 +86,7 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
         feature_vec = []
 
         for j, feature in enumerate(feature_train_list):
-            for fea in feature[:,i]:
+            for fea in feature[:, i]:
                 feature_vec.append(fea)
 
         min_f = np.min(feature_vec)
@@ -92,25 +94,16 @@ def load_data(path="data/", name_list=['w', '1h', '1c', '2', '3', '6', '7', 'T',
         df = max_f - min_f
 
         for j, feature_train in enumerate(feature_train_list):
-            feature_train[:,i] = (feature_train[:,i]-min_f)/df
+            feature_train[:, i] = (feature_train[:, i]-min_f)/df
         for j, feature_val in enumerate(feature_val_list):
-            feature_val[:,i] = (feature_val[:,i]-min_f)/df
+            feature_val[:, i] = (feature_val[:, i]-min_f)/df
         for j, feature_test in enumerate(feature_test_list):
-            feature_test[:,i] = (feature_test[:,i]-min_f)/df
+            feature_test[:, i] = (feature_test[:, i]-min_f)/df
 
-
-
-    return adj_train_list, adj_val_list, adj_test_list, feature_train_list, feature_val_list, feature_test_list, label_train_list, label_val_list, label_test_list, n_fea, n_class
-
-
-
-def sparse_mx_to_torch_sparse_tensor(sparse_mx):
-    """Convert a scipy matrix to a torch sparse tensor."""
-    sparse_mx = sparse_mx.tocoo().astype(np.float32)
-    indices = torch.from_numpy(np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
-    values = torch.from_numpy(sparse_mx.data)
-    shape = torch.Size(sparse_mx.shape)
-    return torch.sparse.FloatTensor(indices, values, shape)
+    return (adj_train_list, adj_val_list, adj_test_list,
+            feature_train_list, feature_val_list, feature_test_list,
+            label_train_list, label_val_list, label_test_list,
+            n_fea, n_class)
 
 
 def accuracy(output, labels):
@@ -119,10 +112,12 @@ def accuracy(output, labels):
     correct = correct.sum()
     return correct / len(labels)
 
+
 def output_to_label(output):
     preds = output.max(1)[1]
     preds = preds.detach().numpy()
     return preds
+
 
 def prepare_svm_data(features_data, labels_data):
     x = []
@@ -136,4 +131,3 @@ def prepare_svm_data(features_data, labels_data):
         for l in label:
             y.append(l)
     return x, y
-

@@ -5,6 +5,9 @@ from layers import GraphConvolution
 
 
 class GCN(nn.Module):
+    """
+    Graph Convolutional Network Class
+    """
     def __init__(self, n_feat, n_hid, n_class, dropout):
         super(GCN, self).__init__()
 
@@ -18,7 +21,11 @@ class GCN(nn.Module):
         x = self.gc2(x, adj)
         return F.log_softmax(x, dim=1)
 
+
 class NN(nn.Module):
+    """
+    Simple Dense Neural Network Class
+    """
     def __init__(self, n_feat, n_hid, n_class, dropout):
         super(NN, self).__init__()
 

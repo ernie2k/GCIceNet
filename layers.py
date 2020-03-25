@@ -1,5 +1,4 @@
 import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +9,7 @@ from torch.nn.modules.module import Module
 class GraphConvolution(Module):
     """
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
+    This class is modified from https://github.com/tkipf/pygcn
     """
 
     def __init__(self, in_features, out_features, bias=True, init='xavier'):
@@ -17,7 +17,7 @@ class GraphConvolution(Module):
         self.in_features = in_features
         self.out_features = out_features
         self.weight = Parameter(torch.FloatTensor(in_features, out_features))
-        
+
         if bias:
             self.bias = Parameter(torch.FloatTensor(out_features))
         else:
@@ -57,4 +57,3 @@ class GraphConvolution(Module):
         return self.__class__.__name__ + ' (' \
                 + str(self.in_features) + ' -> ' \
                 + str(self.out_features) + ')'
-

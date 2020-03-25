@@ -19,8 +19,6 @@ from sklearn.metrics import accuracy_score
 
 # Training settings
 parser = argparse.ArgumentParser()
-#parser.add_argument('--fastmode', action='store_true', default=False,
-#                    help='Validate during training pass.')
 parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--n_conf', type=int, default=10,
