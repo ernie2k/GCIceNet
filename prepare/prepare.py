@@ -11,7 +11,7 @@ import MDAnalysis.analysis.distances
 import MDAnalysis as md
 from tqdm import tqdm
 
-import boo
+#import boo
 
 def pbc(ref_pos_mat, pos_mat, box):
     box = box[:3]
@@ -61,7 +61,7 @@ ow = u.select_atoms("name OW")
 
 n_frame = len(u.trajectory)
 n_ow = len(ow)
-n_feature = 12
+n_feature = 7
 
 feature_mat3 = np.zeros((n_frame, n_ow, n_feature))
 dist_ow_mat = np.zeros((n_ow, n_ow))
@@ -144,22 +144,22 @@ for i in tqdm(range(n_frame)):
 
 
     # bond orientation order
-    l_list = [2, 4, 6, 8, 12]
-    sorted_ngbs_dist_ow_mat = np.copy(sorted_dist_ow_mat[:,1:12])
-    idx_sorted_ngbs_dist_ow_mat = np.copy(idx_sorted_dist_ow_mat[:,1:5])
-    mask = (sorted_ngbs_dist_ow_mat>3.5) 
-    #idx_sorted_ngbs_dist_ow_mat[mask] = -10
-    #print(idx_sorted_ngbs_dist_ow_mat[:10])
+    #l_list = [2, 4, 6, 8, 12]
+    #sorted_ngbs_dist_ow_mat = np.copy(sorted_dist_ow_mat[:,1:12])
+    #idx_sorted_ngbs_dist_ow_mat = np.copy(idx_sorted_dist_ow_mat[:,1:5])
+    #mask = (sorted_ngbs_dist_ow_mat>3.5) 
+    ###idx_sorted_ngbs_dist_ow_mat[mask] = -10
+    ###print(idx_sorted_ngbs_dist_ow_mat[:10])
     
-    for j, l in enumerate(l_list):
-        qlm_mat = boo.ngbs2qlm(pos_ow_mat,
-                               idx_sorted_ngbs_dist_ow_mat,
-							   l=l, periods=box[:3])
-        cqlm_mat = boo.coarsegrain_qlm_ngbs(qlm_mat,
-                                            idx_sorted_ngbs_dist_ow_mat)
-        ql_mat = boo.ql(cqlm_mat)
+    #for j, l in enumerate(l_list):
+    #    qlm_mat = boo.ngbs2qlm(pos_ow_mat,
+    #                           idx_sorted_ngbs_dist_ow_mat,
+	#						   l=l, periods=box[:3])
+    #    cqlm_mat = boo.coarsegrain_qlm_ngbs(qlm_mat,
+    #                                        idx_sorted_ngbs_dist_ow_mat)
+    #    ql_mat = boo.ql(cqlm_mat)
 
-        feature_mat3[i,:,7+j] += ql_mat
+    #    feature_mat3[i,:,7+j] += ql_mat
 
        
 
@@ -195,6 +195,8 @@ for i in tqdm(range(n_frame)):
 
     o_adj.append(adj)
     o_a_hat.append(a_hat)
+
+print(np.shape(feature_mat3))
 
 np.savez(args.o, feature=feature_mat3)
 
